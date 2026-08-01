@@ -25,8 +25,12 @@
   (is (empty? (:writes (get phase/phases 0)))))
 
 (deftest phase-3-auto-commits-only-no-risk-ops
-  (testing ":log-production-batch carries no physical/financial risk -- auto-eligible; it is the ONLY auto-eligible op in this domain"
-    (is (= #{:log-production-batch} (:auto (get phase/phases 3))))))
+  (testing ":log-production-batch carries no physical/financial risk -- auto-eligible.
+      装飾工程を足した後も線引きは同じ（物理的・金銭的リスクを負わない記録だけ）:
+      `:attach-plate-plan` は決定論エンジンの出力への参照を貼るだけで、governor が
+      『刷れる版か』を HARD で検査済み。受注・刷り実績・検品・校正承認はいずれも
+      物理か金銭が動くので auto に入れない（ADR-2608011700）。"
+    (is (= #{:log-production-batch :attach-plate-plan} (:auto (get phase/phases 3))))))
 
 (deftest schedule-maintenance-enabled-from-phase-3-only
   (is (contains? (:writes (get phase/phases 3)) :schedule-maintenance))

@@ -49,6 +49,7 @@
   (:require #?(:clj  [clojure.edn :as edn]
                :cljs [cljs.reader :as edn])
             [clojure.string :as str]
+            [finishingops.decoration :as deco]
             [finishingops.registry :as registry]
             [finishingops.store :as store]
             [langchain.model :as model]))
@@ -147,6 +148,83 @@
      :stake      nil
      :confidence (if (and ready? (not over-volume?)) 0.9 0.3)}))
 
+
+;; ----------------------------- ガーメント装飾（捺染）の工程 -----------------------------
+;;
+;; どの提案も **draft しか作らない**。版を作るのは `cloud-itonami/shirohan`
+;; （決定論の純関数）、校正を承認するのは人、刷り機を動かすのは現場。
+;; ここが出すのは『次の 1 stage へ進める提案』とその根拠だけ。
+
+(defn- register-decoration-order
+  [_db {:keys [subject value]}]
+  {:summary    (str "装飾ジョブ " subject " の受注を登録する draft")
+   :rationale  (str "ボディ " (pr-str (:garment value))
+                    " × " (:garments value) " 枚、刷り位置 " (pr-str (:placement value)))
+   :cites      [:request/value]
+   :effect     :decoration-order/upsert
+   :value      value
+   :stake      nil
+   :confidence 0.9})
+
+(defn- attach-plate-plan
+  [db {:keys [subject value]}]
+  (let [job (store/decoration-job db subject)
+        pp (:plate-plan value)
+        printable? (deco/plate-plan-printable? pp)]
+    {:summary   (str "装飾ジョブ " subject " に版一式を紐づける draft")
+     :rationale (if printable?
+                  (str "製版エンジンの所見 0 件、版 " (:plate-count pp) " 枚、"
+                       "choke " (:choke-mm pp) "mm")
+                  (str "製版エンジンが刷れないと判定した所見が " (:blocking pp) " 件ある"))
+     :cites     [:job/stage :plate-plan/digest :plate-plan/blocking]
+     :effect    :plate-plan/attach
+     :value     value
+     :stake     nil
+     ;; 刷れない版に高い確信を付けない。governor が HARD で止めるが、
+     ;; **確信度の側でも嘘をつかない**（人が見たときに読み取れる）。
+     :confidence (if (and job printable?) 0.9 0.2)}))
+
+(defn- request-proof-approval
+  [db {:keys [subject value]}]
+  (let [job (store/decoration-job db subject)]
+    {:summary   (str "装飾ジョブ " subject " の校正承認を人に求める draft")
+     :rationale (str "承認されると『この版で刷る』が確定する。"
+                     (deco/summarize job))
+     :cites     [:job/stage :plate-plan/digest]
+     :effect    :proof/request-approval
+     ;; **承認者は決して埋めない。** 埋めた提案は governor が HARD で落とす。
+     :value     (update value :proof dissoc :approved-by)
+     :stake     :coordination/proof-approval
+     :confidence 0.9}))
+
+(defn- log-print-run
+  [db {:keys [subject value]}]
+  (let [job (store/decoration-job db subject)
+        ok? (and job
+                 (deco/proof-approved? job)
+                 (deco/digest-matches? job (:plate-digest value))
+                 (not (deco/run-size-exceeded? value)))]
+    {:summary   (str "装飾ジョブ " subject " の刷り実績を記録する draft")
+     :rationale (if ok?
+                  (str "承認済みの版と digest が一致、" (:garments value) " 枚")
+                  "校正未承認、版の digest 不一致、または 1 run の枚数超過")
+     :cites     [:job/proof :plate-plan/digest]
+     :effect    :print-run/log
+     :value     value
+     :stake     nil
+     :confidence (if ok? 0.9 0.2)}))
+
+(defn- log-decoration-inspection
+  [db {:keys [subject value]}]
+  (let [job (store/decoration-job db subject)]
+    {:summary   (str "装飾ジョブ " subject " の検品結果を記録する draft")
+     :rationale (str "刷り上がりの検品。" (deco/summarize job))
+     :cites     [:job/stage :job/print-runs]
+     :effect    :decoration-inspection/log
+     :value     value
+     :stake     nil
+     :confidence (if job 0.9 0.2)}))
+
 (defn infer
   "Route a request to the right proposal generator.
   request: {:op kw :effect :propose :subject id ...op-specific...}"
@@ -156,6 +234,11 @@
     :schedule-maintenance      (schedule-maintenance db request)
     :flag-safety-concern       (flag-safety-concern db request)
     :coordinate-shipment       (coordinate-shipment db request)
+    :register-decoration-order (register-decoration-order db request)
+    :attach-plate-plan         (attach-plate-plan db request)
+    :request-proof-approval    (request-proof-approval db request)
+    :log-print-run             (log-print-run db request)
+    :log-decoration-inspection (log-decoration-inspection db request)
     {:summary "未対応の操作" :rationale (str op) :cites []
      :effect :noop :stake nil :confidence 0.0}))
 
@@ -192,6 +275,10 @@
     :flag-safety-concern        {:equipment (and (:equipment-id value)
                                                   (store/equipment-unit st (:equipment-id value)))}
     :coordinate-shipment        {:batch (store/batch st (:batch-id value))}
+    ;; 装飾ジョブ系はすべて job そのものが事実（工程の現在地・版・校正）
+    (:register-decoration-order :attach-plate-plan :request-proof-approval
+     :log-print-run :log-decoration-inspection)
+    {:job (store/decoration-job st subject)}
     {}))
 
 (defn- parse-proposal

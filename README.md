@@ -17,6 +17,31 @@ Proposes **plant operations coordination**, not machine operation:
 - `:flag-safety-concern` — surface a chemical-handling/effluent-discharge concern (always escalates)
 - `:coordinate-shipment` — finished-fabric shipment coordination proposal back to the customer
 
+### ガーメント装飾（Tシャツ等への捺染）の工程
+
+ISIC 1313 の includes に `printing on textiles and clothing` が明記されており、
+衣類への捺染はこの vertical の担当。工程は **受注 → 版下 → 校正 → 刷り → 検品**
+（`finishingops.decoration/stages`）で、順序は飛ばせない。
+
+- `:register-decoration-order` — 受注（ボディ・枚数・刷り位置・納期）
+- `:attach-plate-plan` — 版下。製版エンジン [`cloud-itonami/shirohan`](https://github.com/cloud-itonami/shirohan)
+  が出した版一式への**参照**（digest / blocking 所見数 / 版数 / choke）を紐づける
+- `:request-proof-approval` — 校正。**常に人**（`:coordination/proof-approval`）
+- `:log-print-run` — 刷りの実績記録（起動指示ではない）
+- `:log-decoration-inspection` — 検品
+
+守っている不変条件は 3 つで、どれも **戻せないのは生地であって記録ではない** が根拠:
+
+| 不変条件 | rule |
+|---|---|
+| 工程を飛ばせない（校正していない版で刷れない） | `:decoration-stage-order` / `:print-run-before-proof-approval` |
+| エンジンが『刷れない』と判定した版は先へ進めない | `:plate-plan-blocking-findings` |
+| **承認した版と刷った版が同じ**（digest 一致） | `:print-run-plate-mismatch` |
+
+3 つ目がこの工程の中心。製版エンジンが決定論であることは『同じ入力から同じ版が
+出る』ことしか保証しない —— 『校正で人が承認したのが本当にこの版か』は、承認時と
+刷り時の digest を突き合わせて初めて言える。
+
 ## What this actor does NOT do
 
 **CRITICAL SCOPE BOUNDARY** (dyeing lines, printing lines, bleaching lines, mercerizing lines; chemical-handling and effluent-discharge hazards):
@@ -27,6 +52,13 @@ Proposes **plant operations coordination**, not machine operation:
 - Does NOT directly operate dyeing/printing-line equipment under any proposal (permanently blocked, see Architecture)
 - ONLY proposes/coordinates operations back-office; all actuation requires explicit human approval
 - Safety-concern flagging ALWAYS escalates — never auto-decided, no confidence threshold or phase below escalation
+- Does NOT make the plates. 版下は `cloud-itonami/shirohan`（決定論の純関数）が作る。
+  この actor が持つのはその結果への参照だけで、幾何には一切触れない
+- Does NOT approve a proof. 校正の承認は人の専権で、`:proof/approved-by` を
+  自分で埋めた提案は HARD で落ちる（`:proof-approval-self-decided`）。commit も
+  承認者を書かない —— 承認は human-in-the-loop の resume でしか入らない
+- Does NOT actuate the press. `:log-print-run` は実績の記録であって起動指示ではない
+  （`:press-actuation-blocked`）
 
 ## Architecture
 

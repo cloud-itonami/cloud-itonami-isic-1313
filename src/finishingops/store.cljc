@@ -73,6 +73,9 @@
   (next-maintenance-sequence [s] "next maintenance-number sequence")
   (next-shipment-sequence [s] "next shipment-number sequence")
   (maintenance-already-scheduled? [s maintenance-id] "has this maintenance window already been scheduled?")
+  (decoration-job [s id] "one garment-decoration job (受注→版下→校正→刷り→検品)")
+  (all-decoration-jobs [s])
+  (with-decoration-jobs [s jobs] "replace/seed the decoration-job directory (map id->job)")
   (commit-record! [s record] "apply a committed op's record to the SSoT")
   (append-ledger! [s fact] "append one immutable decision fact")
   (get-records [s] "the generic id -> raw-record map (domain-agnostic commit-record! path)")
@@ -152,8 +155,45 @@
   (maintenance-already-scheduled? [_ maintenance-id]
     (boolean (get-in @a [:maintenance maintenance-id :scheduled?])))
   (get-records [_] (:records @a))
+  (decoration-job [_ id] (get-in @a [:decoration-jobs id]))
+  (all-decoration-jobs [_] (sort-by :id (vals (:decoration-jobs @a))))
+  (with-decoration-jobs [_ jobs] (swap! a assoc :decoration-jobs jobs) nil)
   (commit-record! [s {:keys [effect path value] :as record}]
     (cond
+      ;; --- ガーメント装飾（捺染）の工程 ---
+      ;; どの effect も job を **1 stage だけ**進める。stage を value から
+      ;; 受け取らないのは、飛び級を governor だけに頼らないため —— 記録の側でも
+      ;; 進める先が固定されていれば、governor を通らない経路が生えても飛べない。
+      (= effect :decoration-order/upsert)
+      (swap! a update-in [:decoration-jobs (first path)] merge
+             (assoc value :id (first path) :stage :ordered))
+
+      (= effect :plate-plan/attach)
+      (swap! a update-in [:decoration-jobs (first path)] merge
+             {:plate-plan (:plate-plan value) :stage :plated})
+
+      (= effect :proof/request-approval)
+      ;; **承認そのものは書かない。** 書けるのは『承認を求めた』事実まで。
+      ;; 実際の承認は human-in-the-loop の resume（interrupt-before）で入る。
+      (swap! a update-in [:decoration-jobs (first path)] merge
+             {:proof (merge (get-in @a [:decoration-jobs (first path) :proof])
+                            (dissoc (:proof value) :approved-by))
+              :stage :proofed})
+
+      (= effect :print-run/log)
+      (swap! a update-in [:decoration-jobs (first path)]
+             (fn [job]
+               (-> (or job {})
+                   (update :print-runs (fnil conj []) value)
+                   (assoc :stage :printed))))
+
+      (= effect :decoration-inspection/log)
+      (swap! a update-in [:decoration-jobs (first path)]
+             (fn [job]
+               (-> (or job {})
+                   (update :inspections (fnil conj []) value)
+                   (assoc :stage :inspected))))
+
       (= effect :batch/upsert)
       (swap! a update-in [:batches (first path)] merge (assoc value :id (first path)))
 

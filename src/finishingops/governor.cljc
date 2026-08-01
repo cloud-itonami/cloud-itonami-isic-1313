@@ -160,7 +160,8 @@
                                        concern`) -- escalate to a human
                                        plant supervisor. SOFT: the
                                        human may approve."
-  (:require [finishingops.registry :as registry]
+  (:require [finishingops.decoration :as deco]
+            [finishingops.registry :as registry]
             [finishingops.store :as store]))
 
 (def confidence-floor 0.6)
@@ -169,7 +170,12 @@
   "The closed allowlist of coordination proposals this actor may ever
   route -- see README `What this actor does`."
   #{:log-production-batch :schedule-maintenance
-    :flag-safety-concern :coordinate-shipment})
+    :flag-safety-concern :coordinate-shipment
+    ;; ガーメント装飾（Tシャツ等への捺染）の工程。ISIC 1313 の includes に
+    ;; `printing on textiles and clothing` が明記されており、ここがその置き場所。
+    ;; 受注 → 版下 → 校正 → 刷り → 検品（`finishingops.decoration/stages`）。
+    :register-decoration-order :attach-plate-plan :request-proof-approval
+    :log-print-run :log-decoration-inspection})
 
 (def allowed-proposal-effects
   "The closed allowlist of SSoT-mutation effects a proposal may declare
@@ -177,14 +183,19 @@
   printing-line-equipment-control effect and NEVER an effluent-
   discharge-permit-decision effect."
   #{:batch/upsert :maintenance/schedule
-    :safety-concern/flag :shipment/propose})
+    :safety-concern/flag :shipment/propose
+    :decoration-order/upsert :plate-plan/attach :proof/request-approval
+    :print-run/log :decoration-inspection/log})
 
 (def high-stakes
   "Stakes grave enough to always require a human, even when clean.
   Safety concerns (chemical-handling/effluent-discharge) are the one
   op in this domain that always demands human eyes regardless of
   confidence."
-  #{:coordination/safety-concern})
+  #{:coordination/safety-concern
+    ;; 校正の承認は『この版で N 枚のボディに刷る』という**戻せない**確定。
+    ;; 生地は刷り直しでは戻らないので、confidence がいくら高くても人が見る。
+    :coordination/proof-approval})
 
 ;; ----------------------------- checks -----------------------------
 
@@ -327,6 +338,114 @@
         [{:rule :invalid-shrinkage-rate
           :detail (str sr "% は物理的に妥当な収縮率の範囲外")}]))))
 
+
+;; ------------------- ガーメント装飾（捺染）の工程 -------------------
+;;
+;; 受注 → 版下 → 校正 → 刷り → 検品。順序・版の同一性・人の承認の 3 点を
+;; HARD で守る。**戻せないのは生地**であって記録ではない、というのがこれらの
+;; 不変条件の根拠。
+
+(defn- decoration-op? [op]
+  (some? (deco/next-stage op)))
+
+(defn- job-of [request st]
+  (when (decoration-op? (:op request))
+    (store/decoration-job st (:subject request))))
+
+(defn- stage-order-violations
+  "HARD: 工程を飛ばせない。
+
+  飛ばせるようにすると『校正していない版で刷る』が起こりうる。刷り直しは
+  記録を直すことであって、潰れたボディは戻らない。"
+  [{:keys [op subject] :as request} st]
+  (when (decoration-op? op)
+    (let [want (deco/next-stage op)
+          need (deco/required-predecessor want)
+          job (job-of request st)]
+      (cond
+        (nil? need) nil                       ; 受注は前提を持たない
+        (nil? job) [{:rule :decoration-job-unknown
+                     :detail (str subject " という装飾ジョブがまだ無い（受注が先）")}]
+        (not (deco/at-least? job need))
+        [{:rule :decoration-stage-order
+          :detail (str (name want) " に進むには " (name need)
+                       " が済んでいる必要がある（現在: "
+                       (name (or (deco/stage-of job) :unknown)) "）")}]))))
+
+(defn- plate-plan-violations
+  "HARD: 版下は engine（cloud-itonami/shirohan）が出したものだけを受ける。
+
+  - digest が無い／形が違う → 同一性を後から示せない
+  - engine が blocking 所見を出した版 → **刷れないと判定されたもの**を
+    『とりあえず校正へ』と通さない。所見は刷る前に潰すためにあり、
+    素通しできるなら出す意味が無い。"
+  [{:keys [op]} proposal]
+  (when (= op :attach-plate-plan)
+    (let [pp (get-in proposal [:value :plate-plan])]
+      (cond
+        (nil? pp)
+        [{:rule :plate-plan-missing
+          :detail "版下の参照（:plate-plan）が提案に無い"}]
+
+        (not (deco/digest-well-formed? (:digest pp)))
+        [{:rule :plate-plan-digest-malformed
+          :detail (str "版一式の digest が hex 16〜128 桁でない: " (pr-str (:digest pp)))}]
+
+        (not (deco/plate-plan-printable? pp))
+        [{:rule :plate-plan-blocking-findings
+          :detail (str "製版エンジンが『刷れない』と判定した所見が "
+                       (:blocking pp) " 件ある。図案を直して版を作り直す")}]))))
+
+(defn- proof-decision-violations
+  "HARD, PERMANENT: この actor は校正の承認を**自分で確定できない**。
+
+  提案できるのは『人に承認を求める』ところまで。`:proof/approved-by` を
+  自分で埋めた提案は、人が見たことにして先へ進めようとしているのと同じ。"
+  [{:keys [op]} proposal]
+  (when (= op :request-proof-approval)
+    (when (seq (str (get-in proposal [:value :proof :approved-by] "")))
+      [{:rule :proof-approval-self-decided
+        :detail "校正の承認者をこの actor が埋めることはできない（人の専権）"}])))
+
+(defn- print-run-violations
+  "HARD: 刷る前に、(1) 校正が**人によって**承認済みで、(2) 刷る版が
+  **承認された版と同一**であること。
+
+  (2) がこの vertical の中心。engine が決定論であることは『同じ入力から同じ版が
+  出る』ことしか保証しない —— 『校正で承認したのが本当にこの版か』は、承認時と
+  刷り時の digest を突き合わせて初めて言える。"
+  [{:keys [op] :as request} proposal st]
+  (when (= op :log-print-run)
+    (let [job (job-of request st)
+          presented (get-in proposal [:value :plate-digest])]
+      (cond
+        (nil? job) nil                        ; stage-order 側が既に止めている
+        (not (deco/proof-approved? job))
+        [{:rule :print-run-before-proof-approval
+          :detail "校正が人によって承認されていない版では刷れない"}]
+
+        (not (deco/digest-matches? job presented))
+        [{:rule :print-run-plate-mismatch
+          :detail (str "刷ろうとしている版の digest が、承認された版と一致しない"
+                       "（申告: " (pr-str presented) "）")}]
+
+        (deco/run-size-exceeded? (get proposal :value))
+        [{:rule :print-run-size-exceeded
+          :detail (str "1 run " (get-in proposal [:value :garments])
+                       " 枚は上限 " deco/max-run-garments " 枚を超える")}]))))
+
+(defn- press-actuation-violations
+  "HARD, PERMANENT: 刷り機を動かすのはこの actor ではない。
+
+  `:log-print-run` は**実績の記録**であって起動指示ではない。`:actuate?` の
+  ような起動を含む提案は、記録の顔をした作動。"
+  [{:keys [op]} proposal]
+  (when (= op :log-print-run)
+    (when (or (true? (get-in proposal [:value :actuate?]))
+              (some? (get-in proposal [:value :press-command])))
+      [{:rule :press-actuation-blocked
+        :detail "刷り機の起動・制御はこの actor の範囲外（記録のみ）"}])))
+
 (defn check
   "Censors a FinishingAdvisor proposal against the governor rules.
   Returns {:ok? bool :violations [..] :confidence c :escalate? bool
@@ -343,7 +462,12 @@
                            (batch-not-verified-violations request proposal st)
                            (shipment-volume-exceeded-violations request proposal st)
                            (invalid-grade-violations request proposal)
-                           (invalid-shrinkage-rate-violations request proposal)))
+                           (invalid-shrinkage-rate-violations request proposal)
+                           (stage-order-violations request st)
+                           (plate-plan-violations request proposal)
+                           (proof-decision-violations request proposal)
+                           (print-run-violations request proposal st)
+                           (press-actuation-violations request proposal)))
         conf (:confidence proposal 0.0)
         low? (< conf confidence-floor)
         stakes? (boolean (high-stakes (:stake proposal)))
