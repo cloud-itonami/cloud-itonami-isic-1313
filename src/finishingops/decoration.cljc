@@ -19,6 +19,11 @@
   版下（白版・白抜き・スポットカラー版分解）は `cloud-itonami/shirohan` が
   **決定論的な純関数**として出す。この actor が持つのはその結果への参照だけ:
 
+  白版そのものは『白インクを塗る部分の指示』で、**図案が乗る面のベタ塗り**
+  （図案の中の白い部分も含む。穴になるのは透明な地だけ）。白インクと色インクの
+  刷りは若干ずれるので、白版は図案より 0.1mm 小さく作る —— この数値の正本は
+  engine 側（`shirohan.plate/default-spec`）で、この actor は結果を受け取るだけ。
+
   - `:plate-plan/digest` —— 版一式のハッシュ。**同一性の証拠**
   - `:plate-plan/blocking` —— engine が『刷れない』と判定した所見の数
   - `:plate-plan/plate-count` / `:plate-plan/choke-mm` —— 人が読むための要約
