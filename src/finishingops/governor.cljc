@@ -161,6 +161,7 @@
                                        plant supervisor. SOFT: the
                                        human may approve."
   (:require [finishingops.decoration :as deco]
+            [finishingops.prepress :as prepress]
             [finishingops.registry :as registry]
             [finishingops.store :as store]))
 
@@ -175,7 +176,9 @@
     ;; `printing on textiles and clothing` が明記されており、ここがその置き場所。
     ;; 受注 → 版下 → 校正 → 刷り → 検品（`finishingops.decoration/stages`）。
     :register-decoration-order :attach-plate-plan :request-proof-approval
-    :log-print-run :log-decoration-inspection})
+    :log-print-run :log-decoration-inspection
+    ;; Prepress craft (shirohan): plan from SVG; human plate approval.
+    :prepress/plan :prepress/approve-plates})
 
 (def allowed-proposal-effects
   "The closed allowlist of SSoT-mutation effects a proposal may declare
@@ -185,7 +188,8 @@
   #{:batch/upsert :maintenance/schedule
     :safety-concern/flag :shipment/propose
     :decoration-order/upsert :plate-plan/attach :proof/request-approval
-    :print-run/log :decoration-inspection/log})
+    :print-run/log :decoration-inspection/log
+    :prepress/plan-record :prepress/approve-plates})
 
 (def high-stakes
   "Stakes grave enough to always require a human, even when clean.
@@ -195,7 +199,9 @@
   #{:coordination/safety-concern
     ;; 校正の承認は『この版で N 枚のボディに刷る』という**戻せない**確定。
     ;; 生地は刷り直しでは戻らないので、confidence がいくら高くても人が見る。
-    :coordination/proof-approval})
+    :coordination/proof-approval
+    ;; 版そのものの人的承認（prepress/approve-plates）。actor は自承認できない。
+    :coordination/plate-approval})
 
 ;; ----------------------------- checks -----------------------------
 
@@ -446,6 +452,52 @@
       [{:rule :press-actuation-blocked
         :detail "刷り機の起動・制御はこの actor の範囲外（記録のみ）"}])))
 
+
+(defn- prepress-plan-violations
+  "HARD: `:prepress/plan` must carry a shirohan summary with input hash,
+  and must not advance when the engine reported blocking findings.
+
+  Geometry is not allowed on the proposal either — only the summary
+  keys produced by `finishingops.prepress/plan-summary`."
+  [{:keys [op]} proposal]
+  (when (= op :prepress/plan)
+    (let [pp (get-in proposal [:value :prepress])
+          err (get-in proposal [:value :error])]
+      (cond
+        (= err :svg-missing)
+        [{:rule :prepress-svg-missing
+          :detail "prepress/plan に SVG が無い（:svg / :svg-path）"}]
+
+        (nil? pp)
+        [{:rule :prepress-plan-missing
+          :detail "prepress summary が提案に無い"}]
+
+        (not (string? (:input-hash pp)))
+        [{:rule :prepress-input-hash-missing
+          :detail "input content hash が無い — 版の同一性を後から示せない"}]
+
+        (prepress/blocking-findings? pp)
+        [{:rule :prepress-blocking-findings
+          :detail (str "shirohan が blocking 所見 "
+                       (:blocking pp) " 件: "
+                       (pr-str (:blocking-kinds pp))
+                       " — 図案を直してから製版し直す")}]
+
+        ;; Refuse proposals that smuggle full geometry (contours) onto the
+        ;; ledger path. Summary plates are allowed (id/label/color only).
+        (some (fn [plate] (contains? plate :contours))
+              (or (:plates pp) []))
+        [{:rule :prepress-geometry-forbidden
+          :detail "plate geometry（:contours）を actor が保持してはならない — summary のみ"}]))))
+
+(defn- prepress-approve-self-decided-violations
+  "HARD, PERMANENT: this actor cannot self-approve plates."
+  [{:keys [op]} proposal]
+  (when (= op :prepress/approve-plates)
+    (when (seq (str (get-in proposal [:value :approved-by] "")))
+      [{:rule :prepress-approval-self-decided
+        :detail "版の承認者をこの actor が埋めることはできない（人の専権）"}])))
+
 (defn check
   "Censors a FinishingAdvisor proposal against the governor rules.
   Returns {:ok? bool :violations [..] :confidence c :escalate? bool
@@ -467,7 +519,9 @@
                            (plate-plan-violations request proposal)
                            (proof-decision-violations request proposal)
                            (print-run-violations request proposal st)
-                           (press-actuation-violations request proposal)))
+                           (press-actuation-violations request proposal)
+                           (prepress-plan-violations request proposal)
+                           (prepress-approve-self-decided-violations request proposal)))
         conf (:confidence proposal 0.0)
         low? (< conf confidence-floor)
         stakes? (boolean (high-stakes (:stake proposal)))

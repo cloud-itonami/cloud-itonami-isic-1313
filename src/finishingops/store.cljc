@@ -76,6 +76,9 @@
   (decoration-job [s id] "one garment-decoration job (受注→版下→校正→刷り→検品)")
   (all-decoration-jobs [s])
   (with-decoration-jobs [s jobs] "replace/seed the decoration-job directory (map id->job)")
+  (prepress-record [s id] "one prepress plan summary (input-hash + plate labels; no geometry)")
+  (all-prepress-records [s])
+  (with-prepress-records [s recs] "replace/seed prepress directory (map id->summary)")
   (commit-record! [s record] "apply a committed op's record to the SSoT")
   (append-ledger! [s fact] "append one immutable decision fact")
   (get-records [s] "the generic id -> raw-record map (domain-agnostic commit-record! path)")
@@ -158,6 +161,10 @@
   (decoration-job [_ id] (get-in @a [:decoration-jobs id]))
   (all-decoration-jobs [_] (sort-by :id (vals (:decoration-jobs @a))))
   (with-decoration-jobs [_ jobs] (swap! a assoc :decoration-jobs jobs) nil)
+  (prepress-record [_ id] (get-in @a [:prepress id]))
+  (all-prepress-records [_] (sort-by :id (vals (into {} (map (fn [[k v]] [k (assoc v :id k)])
+                                                              (:prepress @a))))))
+  (with-prepress-records [_ recs] (swap! a assoc :prepress recs) nil)
   (commit-record! [s {:keys [effect path value] :as record}]
     (cond
       ;; --- ガーメント装飾（捺染）の工程 ---
@@ -193,6 +200,26 @@
                (-> (or job {})
                    (update :inspections (fnil conj []) value)
                    (assoc :stage :inspected))))
+
+      ;; Prepress craft — summary only (input-hash + plate labels). No geometry.
+      (= effect :prepress/plan-record)
+      (swap! a assoc-in [:prepress (first path)]
+             (merge (get-in @a [:prepress (first path)])
+                    (:prepress value)
+                    {:id (first path) :status :planned}))
+
+      (= effect :prepress/approve-plates)
+      ;; Approver identity is written only via human-in-the-loop resume
+      ;; (operation.cljc puts :approved-by on payload). Never trust a
+      ;; self-filled :approved-by on the draft value alone.
+      (swap! a update-in [:prepress (first path)]
+             (fn [rec]
+               (merge (or rec {})
+                      {:id (first path)
+                       :status :plates-approved
+                       :approval (merge (:approval rec)
+                                        (dissoc value :approved-by))
+                       :approved-by (:approved-by value)})))
 
       (= effect :batch/upsert)
       (swap! a update-in [:batches (first path)] merge (assoc value :id (first path)))
@@ -250,6 +277,7 @@
   []
   (->MemStore (atom {:batches {} :equipment {} :maintenance {} :shipments {}
                       :records {} :safety-concerns []
+                      :decoration-jobs {} :prepress {}
                       :ledger [] :maintenance-sequence 0 :maintenance-history []
                       :shipment-sequence 0 :shipment-history []})))
 

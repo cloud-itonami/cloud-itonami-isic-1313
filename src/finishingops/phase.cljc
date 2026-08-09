@@ -36,10 +36,12 @@
     :flag-safety-concern :coordinate-shipment
     ;; ガーメント装飾（捺染）の工程
     :register-decoration-order :attach-plate-plan :request-proof-approval
-    :log-print-run :log-decoration-inspection})
+    :log-print-run :log-decoration-inspection
+    ;; Prepress craft (shirohan)
+    :prepress/plan :prepress/approve-plates})
 
 (def decoration-auto-ops
-  "装飾工程のうち **phase 3 で自動確定してよい** op。1 つだけ。
+  "装飾・prepress 工程のうち **phase 3 で自動確定してよい** op。
 
   この repo の既存の線引きは『物理的・金銭的リスクを負わない記録だけが
   auto-eligible』で、装飾工程にもそのまま当てる:
@@ -47,14 +49,16 @@
   | op | auto | 理由 |
   |---|---|---|
   | `:attach-plate-plan` | ○ | 決定論エンジンの出力への**参照を貼るだけ**。governor が既に『刷れる版か』を HARD で検査済みで、これ単体からは物理も金銭も動かない |
+  | `:prepress/plan` | ○ | shirohan を一度呼んで **input hash + summary だけ**を記録。geometry は持たない。blocking は governor HARD。物理も金銭も動かない |
   | `:register-decoration-order` | ✕ | 受注は**金銭的な約束**。枚数・納期を actor が独断で確定しない |
   | `:log-print-run` | ✕ | 『N 枚刷った』は材料消費と請求の主張。物理的実体についての claim |
   | `:log-decoration-inspection` | ✕ | 合否が出荷を決める |
   | `:request-proof-approval` | ✕ | 記録ではなく**未来の確定**。生地は刷り直しでは戻らない |
+  | `:prepress/approve-plates` | ✕ | 版の人的承認。actor は自承認できない（high-stakes + phase） |
 
-  `:request-proof-approval` は governor の high-stakes 側でも常に人に回るが、
-  **層を 2 つにしておく**（どちらか一方の設定ミスで自動承認が生えないように）。"
-  #{:attach-plate-plan})
+  `:request-proof-approval` / `:prepress/approve-plates` は governor の
+  high-stakes 側でも常に人に回るが、**層を 2 つにしておく**。"
+  #{:attach-plate-plan :prepress/plan})
 
 ;; NOTE the invariant: `:schedule-maintenance` is a member of
 ;; `write-ops` (governor-gated like any write) but is NEVER a member of
@@ -68,7 +72,9 @@
                                              :coordinate-shipment
                                              :register-decoration-order
                                              :attach-plate-plan
-                                             :request-proof-approval}                       :auto #{}}
+                                             :request-proof-approval
+                                             :prepress/plan
+                                             :prepress/approve-plates}                       :auto #{}}
    3 {:label "supervised-auto"     :writes write-ops
       :auto (conj decoration-auto-ops :log-production-batch)}})
 

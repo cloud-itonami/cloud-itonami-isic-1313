@@ -30,7 +30,8 @@
       `:attach-plate-plan` は決定論エンジンの出力への参照を貼るだけで、governor が
       『刷れる版か』を HARD で検査済み。受注・刷り実績・検品・校正承認はいずれも
       物理か金銭が動くので auto に入れない（ADR-2608011700）。"
-    (is (= #{:log-production-batch :attach-plate-plan} (:auto (get phase/phases 3))))))
+    (is (= #{:log-production-batch :attach-plate-plan :prepress/plan}
+           (:auto (get phase/phases 3))))))
 
 (deftest schedule-maintenance-enabled-from-phase-3-only
   (is (contains? (:writes (get phase/phases 3)) :schedule-maintenance))

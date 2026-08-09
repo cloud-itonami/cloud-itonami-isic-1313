@@ -50,6 +50,7 @@
                :cljs [cljs.reader :as edn])
             [clojure.string :as str]
             [finishingops.decoration :as deco]
+            [finishingops.prepress :as prepress]
             [finishingops.registry :as registry]
             [finishingops.store :as store]
             [langchain.model :as model]))
@@ -225,6 +226,70 @@
      :stake     nil
      :confidence (if job 0.9 0.2)}))
 
+
+(defn- prepress-plan
+  "Call shirohan once; propose a *summary-only* record (input hash + plate
+  labels + finding counts). Never put plate geometry on the proposal value.
+
+  Confidence drops when SVG is missing or the engine reports blocking
+  findings — governor HARD-holds those; confidence stays honest for humans
+  reading the audit trail."
+  [_db {:keys [subject value]}]
+  (let [result (prepress/run-plan (or value {}))
+        err (:error result)
+        summary (:summary result)]
+    (cond
+      (= err :svg-missing)
+      {:summary   (str "prepress/plan " subject " — SVG が無い")
+       :rationale "request :value に :svg / :svg-path が無い。製版できない。"
+       :cites     []
+       :effect    :prepress/plan-record
+       :value     {:prepress nil :error :svg-missing}
+       :stake     nil
+       :confidence 0.1}
+
+      (prepress/blocking-findings? summary)
+      {:summary   (str "prepress/plan " subject " — blocking 所見 "
+                       (:blocking summary) " 件（入力 " (:input-hash summary) "）")
+       :rationale (str "shirohan 所見 kinds=" (pr-str (:blocking-kinds summary))
+                       "。刷る前に図案を直す。geometry は提案に載せない。")
+       :cites     [:prepress/input-hash :prepress/blocking]
+       :effect    :prepress/plan-record
+       :value     {:prepress summary}
+       :stake     nil
+       :confidence 0.2}
+
+      :else
+      {:summary   (str "prepress/plan " subject " — 版 "
+                       (:plate-count summary) " 枚 / hash "
+                       (subs (:input-hash summary) 0 12))
+       :rationale (str "shirohan.plan 完了。labels="
+                       (pr-str (:plate-labels summary))
+                       " findings=0。SSoT には hash+summary のみ。")
+       :cites     [:prepress/input-hash :prepress/plate-labels]
+       :effect    :prepress/plan-record
+       :value     {:prepress summary}
+       :stake     nil
+       :confidence 0.95})))
+
+(defn- prepress-approve-plates
+  "Human plate approval — always high-stakes. Actor never self-approves."
+  [db {:keys [subject value]}]
+  (let [rec (store/prepress-record db subject)
+        printable? (prepress/printable? rec)]
+    {:summary   (str "prepress/approve-plates " subject " — 人による版承認を求める")
+     :rationale (if printable?
+                  (str "記録済み plan hash=" (:input-hash rec)
+                       " plates=" (pr-str (:plate-labels rec)))
+                  (str "承認対象の clean plan が store に無い/blocking あり: "
+                       (pr-str (select-keys (or rec {}) [:input-hash :blocking]))))
+     :cites     (if rec [:prepress/input-hash] [])
+     :effect    :prepress/approve-plates
+     ;; never pre-fill approver — human-in-the-loop resume writes it
+     :value     (dissoc (or value {}) :approved-by)
+     :stake     :coordination/plate-approval
+     :confidence (if printable? 0.9 0.3)}))
+
 (defn infer
   "Route a request to the right proposal generator.
   request: {:op kw :effect :propose :subject id ...op-specific...}"
@@ -239,6 +304,8 @@
     :request-proof-approval    (request-proof-approval db request)
     :log-print-run             (log-print-run db request)
     :log-decoration-inspection (log-decoration-inspection db request)
+    :prepress/plan             (prepress-plan db request)
+    :prepress/approve-plates   (prepress-approve-plates db request)
     {:summary "未対応の操作" :rationale (str op) :cites []
      :effect :noop :stake nil :confidence 0.0}))
 
@@ -279,6 +346,8 @@
     (:register-decoration-order :attach-plate-plan :request-proof-approval
      :log-print-run :log-decoration-inspection)
     {:job (store/decoration-job st subject)}
+    (:prepress/plan :prepress/approve-plates)
+    {:prepress (store/prepress-record st subject)}
     {}))
 
 (defn- parse-proposal
