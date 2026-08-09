@@ -11,7 +11,14 @@
  :deps {io.github.kotoba-lang/langgraph
         {:local/root "../../kotoba-lang/langgraph"}
         io.github.kotoba-lang/langchain
-        {:local/root "../../kotoba-lang/langchain"}}
+        {:local/root "../../kotoba-lang/langchain"}
+        ;; Prepress craft engine (白版 / plate separation). Pure .cljc.
+        ;; Monorepo: sibling under orgs/cloud-itonami/. Standalone fork:
+        ;;   io.github.cloud-itonami/shirohan
+        ;;   {:git/url "https://github.com/cloud-itonami/shirohan"
+        ;;    :git/sha "<pin from origin/main>"}
+        io.github.cloud-itonami/shirohan
+        {:local/root "../shirohan"}}
  :aliases
  {;; offline workspace dev -- pin transitive langchain to local checkout
   ;; (kept for parity with sibling actors' deps.edn shape; redundant
