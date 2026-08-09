@@ -94,6 +94,9 @@ clojure -M:dev:test
 # Run the demo
 clojure -M:dev:run
 
+# Build-time operator console (REAL actor stack → docs/samples/operator-console.html)
+clojure -M:dev:render-html
+
 # Lint
 clojure -M:lint
 ```
