@@ -17,7 +17,7 @@
     :prepress/approve-plates  — human plate approval (always escalate)
 
   See ADR-2608090800 / ADR-2608011100."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [shirohan.core :as shirohan]
             #?(:clj [clojure.java.io :as io]))
   #?(:clj (:import (java.security MessageDigest)

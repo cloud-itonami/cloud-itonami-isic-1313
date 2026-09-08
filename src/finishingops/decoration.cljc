@@ -38,7 +38,7 @@
   engine が `:choke-erases-feature`（白版から図案が消える）や `:no-art` を出した
   版を『とりあえず校正に回す』ことを許さない。所見は刷る前に潰すためにあり、
   素通しできるなら出す意味が無い。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 ;; ---------------------------------------------------------------- 工程
 
@@ -89,7 +89,7 @@
   ない（engine の出力を持っているのは呼び出し側）。**確かめられないものを
   確かめたふりで通さない**ために、形式検査であることを名前と doc に書いておく。"
   [d]
-  (boolean (and (string? d) (re-matches digest-re (str/lower-case d)))))
+  (boolean (and (string? d) (re-matches digest-re (str/lower d)))))
 
 (defn plate-plan-printable?
   "engine が『刷れる』と言った版か。blocking 所見が 0 のときだけ真。"
@@ -106,8 +106,8 @@
   [job presented]
   (boolean (and presented
                 (some-> (plate-plan-of job) :digest)
-                (= (str/lower-case (str presented))
-                   (str/lower-case (str (:digest (plate-plan-of job))))))))
+                (= (str/lower (str presented))
+                   (str/lower (str (:digest (plate-plan-of job))))))))
 
 ;; ---------------------------------------------------------------- 校正
 
