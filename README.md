@@ -86,19 +86,19 @@ Classic governed-actor pattern (`finishingops.operation/build`, a langgraph-clj 
 
 ```bash
 # Run tests (top-level deps.edn already pins langgraph+langchain local/root)
-clojure -M:test
+kbb -M:test
 
 # Run tests via the workspace :dev override alias (equivalent, kept for sibling-repo parity)
-clojure -M:dev:test
+kbb -M:dev:test
 
 # Run the demo
-clojure -M:dev:run
+kbb -M:dev:run
 
 # Build-time operator console (REAL actor stack → docs/samples/operator-console.html)
-clojure -M:dev:render-html
+kbb -M:dev:render-html
 
 # Lint
-clojure -M:lint
+kbb -M:lint
 ```
 
 ## Status

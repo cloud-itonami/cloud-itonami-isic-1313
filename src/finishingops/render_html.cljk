@@ -6,7 +6,7 @@
   namespace drives the REAL actor stack (`finishingops.operation` ->
   `finishingops.governor` -> `finishingops.store`) through a scenario
   adapted from this repo's own `finishingops.sim` demo driver
-  (`clojure -M:dev:run`, confirmed against
+  (`kbb -M:dev:run`, confirmed against
   `finishingops.store/sample-batches`/`sample-equipment` seeded ids
   before this file was written), trimmed to a representative subset
   (the one clean phase-3 auto-commit this domain has, the maintenance-
@@ -17,7 +17,7 @@
   no invented numbers, no timestamps in the page content, byte-identical
   across reruns against the same seed.
 
-  Usage: `clojure -M:dev:render-html [out-file]`
+  Usage: `kbb -M:dev:render-html [out-file]`
   (default `docs/samples/operator-console.html`)."
   (:require [jp-go-dds.skin]
             [kotoba.lang.text :as str]
@@ -292,7 +292,7 @@
      "<main>\n"
      "  <section class=\"card\">\n"
      "    <h2>Production batches</h2>\n"
-     "    <p class=\"muted\">Demo snapshot — build-time-generated from <code>finishingops.store</code> via <code>finishingops.render-html</code> (<code>clojure -M:dev:render-html</code>), regenerated nightly.</p>\n"
+     "    <p class=\"muted\">Demo snapshot — build-time-generated from <code>finishingops.store</code> via <code>finishingops.render-html</code> (<code>kbb -M:dev:render-html</code>), regenerated nightly.</p>\n"
      "    <table>\n"
      "      <thead><tr><th>Batch</th><th>Process</th><th>Fabric</th><th>Colorfastness</th><th>Volume (yd)</th><th>Shrinkage (%)</th><th>Verified</th><th>Registered</th><th>Shipped (yd)</th><th>Last op status</th></tr></thead>\n"
      "      <tbody>\n"
