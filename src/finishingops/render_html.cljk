@@ -38,7 +38,7 @@
   (g/run* actor {:approval {:status :approved :by "op-1"}}
           {:thread-id tid :resume? true}))
 
-;; SVG fixtures match `test/finishingops/prepress_test.cljc` so the
+;; SVG fixtures match `test/finishingops/prepress_test.cljk` so the
 ;; build-time page exercises the same shirohan paths the tests pin.
 
 (def ^:private clean-svg
