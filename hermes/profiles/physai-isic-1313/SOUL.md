@@ -16,15 +16,16 @@ README に "Robotics premise" 節は無い。仕上げ工場は委託された�
 | `:jet-dyer-drain` | tank-drain | 液流染色機（断面 1.6 m²、液位 1.1 m）の染色残液をすすぎ前に排液する | 目標液位 0.05 m までの時間 | 300 s（estimate） |
 
 測定の入口: `kbb -M:dev:physics`。全 run が数値を返さなければ exit 2 = **測れなかった**（「異常なし」ではない）。
-test: `kbb -M:dev:physai-test`（`test-physai/finishingops/physics_spec_test.cljk` が physics.edn の妥当性と全 run の計測を検査する: 2 test / 5 assertion）。
-この alias は `test-physai/` だけを載せる: repo 自身の `test/finishingops/prepress_test.cljk` の `content-hash-is-stable-sha256-hex` が
-`prepress/content-hash` の `:clj` 分岐（SHA-256）だけが出す 64 桁 hex を要求し、kbb の runner は `:cljs` の代替ハッシュを走らせて落ちるため（`"cljs-127-198642050"`）。
-repo 自身の test/ は JVM の `:test` で走る。この bot の test 数は physics の test だけを数える。
+test: `kbb -M:dev:physai-test`（`test-physai/finishingops/physics_spec_test.cljk` が physics.edn の妥当性と全 run の計測を検査する。repo 自身の test/ も同じ runner で走る）。
+**未解決（land 不可の理由）**: repo 自身の `test/finishingops/prepress_test.cljk` の `content-hash-is-stable-sha256-hex` が kbb の runner で落ちる（main でも同じ: 98 test / 287 pass / 1 fail）。
+`prepress/content-hash` の `:cljs` 分岐が SHA-256 ではなく `"cljs-127-198642050"` のような代替値を返すため。test/ を外すと test 数が減って `land` が拒否する。
+直すには `:cljs` 分岐に検証済みの SHA-256 経路が要る（kotoba-lang/security の sha256 は非 JVM で fail closed）。これがこの bot の最初の成長候補。
 
 ## 測って分かったこと・限界（成長の第一候補）
 
-1. **熱セット**: 180 °C 到達は生地厚 0.3 mm で 2.2 s、1.0 mm で 7.9 s、2.0 mm で 17.2 s。30 s を超える厚さは **3.27 mm**。
-   通常の織物・編物の厚さでは滞留時間ではなく熱風側の熱伝達（80 W/m²·K の仮定）が律速で、時間はほぼ厚さに比例して伸びる。
+1. **熱セット**: 両面から熱風が当たるので、掃引する `:thickness-m` は厚さの半分（中央は対称面として断熱）。
+   180 °C 到達は半厚 0.15 mm で 2.3 s、0.5 mm で 9.4 s、1.0 mm で 23.7 s。30 s を超える半厚は **1.18 mm**（全厚約 2.4 mm）。
+   薄い生地では熱風側の熱伝達（80 W/m²·K の仮定）が律速で、厚くなると伝導が効いて時間の伸びが速くなる。
 2. **排液**: 排出口面積 0.001 m² で 962 s、0.002 m² で 481 s、0.003 m² で 321 s（いずれも限界超過）、0.005 m² で 192.5 s、0.008 m² で 120.5 s。
    300 s に収まる最小の排出口面積は **0.00321 m²**（直径約 64 mm）。
 3. **estimate のままの値**（置き換え候補）: 熱セットの滞留時間 30 s と熱セット温度 180 °C（テンターのメーカー仕様・加工標準で置き換える）、生地の熱物性（k 0.05・ρ 400・c 1300）と熱伝達係数 80 W/m²·K、

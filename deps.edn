@@ -38,10 +38,7 @@
   :physics {:main-opts ["-m" "kotoba.robotics.process.probe"]}
   ;; kbb -M:physai-test -> test/'s .cljk on kbb's runner (the bot's test count;
   ;; a .kotoba vertical's own :test may refuse kbb on purpose).
-  ;; test/ is left out here: finishingops.prepress-test asserts a SHA-256 hex
-  ;; that only the :clj branch of prepress/content-hash produces (kbb runs the
-  ;; :cljs fallback and fails it). The repo's own :test still runs test/ on JVM.
-  :physai-test {:extra-paths ["test-physai"] :main-opts ["-m" "cognitect.test-runner"]}
+  :physai-test {:extra-paths ["test" "test-physai"] :main-opts ["-m" "cognitect.test-runner"]}
 ;; offline workspace dev -- pin transitive langchain to local checkout
   ;; (kept for parity with sibling actors' deps.edn shape; redundant
   ;; with the top-level :deps override above).
