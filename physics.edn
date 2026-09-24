@@ -1,0 +1,31 @@
+;; What this vertical's robot physically does, declared for
+;; kotoba.robotics.process (kotoba-lang/robotics). `kbb -M:dev:physics` runs it.
+;;
+;; README has no "Robotics premise" section. The finishing plant dyes,
+;; prints, bleaches and mercerizes customer fabric. Its physical work here:
+;; heat-setting polyester fabric on a stenter (hot air on both faces), and
+;; draining a jet-dyeing machine's exhausted dye bath before rinsing.
+;;
+;; Every number without a cited source is marked `estimate` in its :basis.
+;; Replacing an estimate with a sourced value is this bot's growth work.
+{:physics/schema "itonami.physical-ai.spec.v1"
+ :repo "cloud-itonami/cloud-itonami-isic-1313"
+ :cases
+ [{:id :stenter-heat-set
+   :kind :thermal
+   :procedure "polyester fabric passes through the stenter's hot-air chambers (air on both faces) until its middle reaches heat-setting temperature; swept :thickness-m is HALF the thickness (heated face to mid-plane), mid-plane adiabatic by symmetry, so the back face is the middle"
+   :params {:conductivity-w-mk 0.05 :density-kg-m3 400.0 :specific-heat-j-kgk 1300.0
+            :t0-c 25.0 :t-hot-c 200.0 :h-front-w-m2k 80.0 :t-back-ambient-c 200.0 :h-back-w-m2k 0.0
+            :threshold-c 180.0 :duration-s 90.0 :nodes 11}
+   :sweep {:param :thickness-m :values [0.00015 0.0003 0.0005 0.00075 0.001]}
+   :quantity :time-to-threshold-s
+   :limit {:max 30.0 :basis "estimate: about 30 s dwell in the heat-setting zone at production speed"}
+   :boundary {:lo 0.0001 :hi 0.002}}
+  {:id :jet-dyer-drain
+   :kind :tank-drain
+   :procedure "drain the exhausted dye bath of a jet-dyeing machine through its drain valve before the rinse bath"
+   :params {:tank-area-m2 1.6 :h0-m 1.1 :h-target-m 0.05 :cd 0.62 :q-in-m3s 0.0}
+   :sweep {:param :orifice-area-m2 :values [0.001 0.002 0.003 0.005 0.008]}
+   :quantity :time-to-target-s
+   :limit {:max 300.0 :basis "estimate: 5-minute drain step in a jet-dyeing cycle"}
+   :boundary {:lo 0.0005 :hi 0.02}}]}
