@@ -4,7 +4,7 @@
   (a) clean simple SVG plan path commits (phase 3 auto)
   (b) SVG that produces blocking findings HARD-holds with rule visible
   (c) mutation: prepress ops must stay on the closed allowlist"
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [finishingops.advisor :as advisor]
             [finishingops.governor :as governor]
             [finishingops.operation :as operation]
