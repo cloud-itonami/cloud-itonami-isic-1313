@@ -6,7 +6,7 @@
   1. 工程を飛ばせない（校正していない版で刷れない）
   2. 版は製版エンジンが『刷れる』と言ったものだけ
   3. **承認した版と刷った版が同じ**（digest 一致）"
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [finishingops.decoration :as deco]
             [finishingops.governor :as governor]
             [finishingops.advisor :as advisor]
