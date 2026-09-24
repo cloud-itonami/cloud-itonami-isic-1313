@@ -37,10 +37,15 @@
            bs (.digest md (.getBytes (str s) StandardCharsets/UTF_8))]
        (apply str (map #(format "%02x" (bit-and % 0xff)) bs)))
      :cljs
-     ;; Browser path not exercised by JVM tests; keep a stable pure fallback
-     ;; so the ns loads. Prefer SubtleCrypto at the cljs host boundary.
+     ;; Node hosts (kbb, nbb) carry node:crypto: the same SHA-256 hex as the
+     ;; JVM branch, so an identity is host-independent. A browser without it
+     ;; keeps the stable pure fallback so the ns still loads (prefer
+     ;; SubtleCrypto at the cljs host boundary there).
      (let [x (str s)]
-       (str "cljs-" (count x) "-" (hash x)))))
+       (try
+         (-> (js/require "node:crypto") (.createHash "sha256") (.update x "utf8") (.digest "hex"))
+         (catch :default _
+           (str "cljs-" (count x) "-" (hash x)))))))
 
 ;; ---------------------------------------------------------------- resolve input
 
