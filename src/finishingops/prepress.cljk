@@ -17,11 +17,10 @@
     :prepress/approve-plates  — human plate approval (always escalate)
 
   See ADR-2608090800 / ADR-2608011100."
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.bytes :as kbytes] [kotoba.lang.text :as str]
             [shirohan.core :as shirohan]
-            #?(:clj [clojure.java.io :as io]))
-  #?(:clj (:import (java.security MessageDigest)
-                   (java.nio.charset StandardCharsets))))
+            #?(:clj [kotoba.io :as io]))
+  #?(:clj (:import (java.security MessageDigest))))
 
 ;; ---------------------------------------------------------------- hash
 
@@ -34,7 +33,7 @@
   [s]
   #?(:clj
      (let [md (MessageDigest/getInstance "SHA-256")
-           bs (.digest md (.getBytes (str s) StandardCharsets/UTF_8))]
+           bs (.digest md (kbytes/utf8-bytes (str s)))]
        (apply str (map #(format "%02x" (bit-and % 0xff)) bs)))
      :cljs
      ;; Node hosts (kbb, nbb) carry node:crypto: the same SHA-256 hex as the
@@ -64,7 +63,7 @@
     #?@(:clj
         [(or (string? svg-path) (string? path))
          (let [p (or svg-path path)]
-           (when (and p (.exists (io/file p)))
+           (when (and p (io/exists? (io/file p)))
              (slurp p)))]
         :cljs [])
     :else nil))
